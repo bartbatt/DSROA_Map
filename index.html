@@ -395,6 +395,19 @@
         }
         .dsr-tools button:disabled { opacity: 0.6; cursor: default; }
         .dsr-status { font-size: 12px; color: #555; line-height: 1.35; }
+        /* Road name labels (shown when zoomed in) */
+        .road-label { pointer-events: none; }
+        .road-label span {
+            position: absolute;
+            left: 0;
+            top: 0;
+            white-space: nowrap;
+            color: #FFFFFF;
+            font: 700 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            letter-spacing: 0.5px;
+            text-shadow: 0 0 3px #000, 0 0 2px #000, 1px 1px 2px #000;
+            transform-origin: center center;
+        }
         .dsr-tools-body { display: flex; flex-direction: column; gap: 6px; }
         .dsr-tools.collapsed { padding: 0; }
         .dsr-tools.collapsed .dsr-tools-body { display: none; }
@@ -898,7 +911,12 @@
                     overlays[config.name] = layer;
                     
                     // Add certain layers by default
-                    if (['Property Parcels', 'Lower Cabins Water System', 
+                    if (ROAD_LAYER_NAMES.includes(config.name)) {
+                        roadLayers[config.name] = layer;
+                        scheduleRoadLabels();
+                    }
+                    
+                    if (['Property Parcels', 'Lower Cabins Water System', 'Utah Roads', 
                          'Roads (BLM ROW)', 'Points of Interest', 'Culverts'].includes(config.name)) {
                         layer.addTo(map);
                     }
@@ -927,6 +945,89 @@
                     loadedCount++;
                 });
         });
+        
+        // ========================================
+        // ROAD NAME LABELS
+        // ========================================
+        // White road names drawn along each road once zoomed in to ROAD_LABEL_MIN_ZOOM or closer.
+        // Each name is shown once per stretch of screen so labels don't pile up.
+        const ROAD_LAYER_NAMES = ['Roads (BLM ROW)', 'Utah Roads'];  // BLM ROW names take priority
+        const ROAD_LABEL_MIN_ZOOM = 15;
+        const roadLayers = {};
+        map.createPane('roadLabels');
+        map.getPane('roadLabels').style.zIndex = 450;
+        map.getPane('roadLabels').style.pointerEvents = 'none';
+        const roadLabelGroup = L.layerGroup().addTo(map);
+        let roadLabelTimer = null;
+        
+        function scheduleRoadLabels() {
+            clearTimeout(roadLabelTimer);
+            roadLabelTimer = setTimeout(updateRoadLabels, 100);
+        }
+        
+        function updateRoadLabels() {
+            roadLabelGroup.clearLayers();
+            if (map.getZoom() < ROAD_LABEL_MIN_ZOOM) return;
+            const view = map.getBounds().pad(0.1);
+            const placed = [];   // {name, pt}
+            
+            ROAD_LAYER_NAMES.forEach(layerName => {
+                const roadLayer = roadLayers[layerName];
+                if (!roadLayer || !map.hasLayer(roadLayer)) return;
+                
+                roadLayer.eachLayer(line => {
+                    const props = line.feature && line.feature.properties || {};
+                    const name = (props.fullname || props.name || '').trim();
+                    if (!name || !line.getBounds().intersects(view)) return;
+                    
+                    let parts = line.getLatLngs();
+                    if (parts.length && !Array.isArray(parts[0])) parts = [parts];
+                    const textPx = name.length * 7.5 + 20;
+                    
+                    parts.forEach(part => {
+                        const pts = part.map(ll => map.latLngToLayerPoint(ll));
+                        let total = 0;
+                        for (let i = 1; i < pts.length; i++) total += pts[i].distanceTo(pts[i - 1]);
+                        if (total < textPx) return;  // too short on screen to fit the name
+                        
+                        // Midpoint along the line, and the direction of the line there
+                        let half = total / 2, mid = null, angle = 0;
+                        for (let i = 1; i < pts.length; i++) {
+                            const seg = pts[i].distanceTo(pts[i - 1]);
+                            if (half <= seg && seg > 0) {
+                                const t = half / seg;
+                                mid = L.point(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+                                              pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t);
+                                angle = Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x) * 180 / Math.PI;
+                                break;
+                            }
+                            half -= seg;
+                        }
+                        if (!mid) return;
+                        const midLatLng = map.layerPointToLatLng(mid);
+                        if (!map.getBounds().pad(-0.05).contains(midLatLng)) return;  // keep labels fully on screen
+                        
+                        // Skip if the same name is already labeled nearby, or another label is in the way
+                        const crowded = placed.some(p =>
+                            (p.name === name && p.pt.distanceTo(mid) < 350) || p.pt.distanceTo(mid) < 45);
+                        if (crowded) return;
+                        placed.push({ name, pt: mid });
+                        
+                        if (angle > 90) angle -= 180;      // keep text upright
+                        if (angle < -90) angle += 180;
+                        const icon = L.divIcon({
+                            className: 'road-label',
+                            html: `<span style="transform: translate(-50%, -50%) rotate(${angle.toFixed(1)}deg)">${name}</span>`,
+                            iconSize: [0, 0]
+                        });
+                        L.marker(midLatLng, { icon, interactive: false, keyboard: false, pane: 'roadLabels' })
+                            .addTo(roadLabelGroup);
+                    });
+                });
+            });
+        }
+        
+        map.on('zoomend moveend overlayadd overlayremove', scheduleRoadLabels);
         
         // ========================================
         // OFFLINE SUPPORT
