@@ -395,6 +395,25 @@
         }
         .dsr-tools button:disabled { opacity: 0.6; cursor: default; }
         .dsr-status { font-size: 12px; color: #555; line-height: 1.35; }
+        .dsr-tools-body { display: flex; flex-direction: column; gap: 6px; }
+        .dsr-tools.collapsed { padding: 0; }
+        .dsr-tools.collapsed .dsr-tools-body { display: none; }
+        .dsr-tools .dsr-toggle {
+            text-align: center;
+            padding: 4px 8px;
+            font-size: 12px;
+            background: white;
+            border: none;
+            color: #555;
+        }
+        .dsr-tools.collapsed .dsr-toggle {
+            width: 34px;
+            height: 34px;
+            padding: 0;
+            font-size: 18px;
+            line-height: 34px;
+            color: #333;
+        }
         .dsr-status:empty { display: none; }
     </style>
 </head>
@@ -1052,15 +1071,32 @@
                 L.DomEvent.disableClickPropagation(div);
                 L.DomEvent.disableScrollPropagation(div);
                 
-                const dlButton = L.DomUtil.create('button', '', div);
-                const status = L.DomUtil.create('div', 'dsr-status', div);
+                // Hide/show toggle (remembered between visits; starts hidden after the map is saved)
+                const toggle = L.DomUtil.create('button', 'dsr-toggle', div);
+                const body = L.DomUtil.create('div', 'dsr-tools-body', div);
+                function setCollapsed(collapsed) {
+                    div.classList.toggle('collapsed', collapsed);
+                    toggle.textContent = collapsed ? '⬇' : '▲ Hide';
+                    toggle.title = collapsed ? 'Offline map & location' : 'Hide this panel';
+                    try { localStorage.setItem('dsrToolsCollapsed', collapsed ? '1' : '0'); } catch (e) {}
+                }
+                let startCollapsed = false;
+                try {
+                    const pref = localStorage.getItem('dsrToolsCollapsed');
+                    startCollapsed = pref !== null ? pref === '1' : !!localStorage.getItem('dsrOfflineSaved');
+                } catch (e) {}
+                setCollapsed(startCollapsed);
+                toggle.onclick = () => setCollapsed(!div.classList.contains('collapsed'));
+                
+                const dlButton = L.DomUtil.create('button', '', body);
+                const status = L.DomUtil.create('div', 'dsr-status', body);
                 let saved = null;
                 try { saved = localStorage.getItem('dsrOfflineSaved'); } catch (e) {}
                 dlButton.textContent = saved ? '⬇ Update offline map' : '⬇ Download for offline';
                 if (saved) status.textContent = 'Offline map saved ' + new Date(saved).toLocaleDateString() + '.';
                 dlButton.onclick = () => downloadForOffline(dlButton, status);
                 
-                const locButton = L.DomUtil.create('button', '', div);
+                const locButton = L.DomUtil.create('button', '', body);
                 locButton.textContent = '◎ Show my location';
                 locButton.onclick = () => {
                     status.textContent = 'Finding your location...';
