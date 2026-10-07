@@ -557,6 +557,10 @@
             <span>Lower Cabins Water Valves</span>
         </div>
         <div class="legend-item">
+            <div class="legend-point" style="background-color: #0088CC;"></div>
+            <span>Upper Cabins Water Valves</span>
+        </div>
+        <div class="legend-item">
             <div class="legend-line" style="background-color: #00AA00;"></div>
             <span>Irrigation Lines</span>
         </div>
@@ -765,6 +769,19 @@
                 group: 'water'
             },
             {
+                file: 'upper_cabins_water_valves.geojson',
+                name: 'Upper Cabins Water Valves',
+                pointStyle: {
+                    radius: 5,
+                    fillColor: '#0088CC',
+                    color: '#FFF',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.9
+                },
+                group: 'water'
+            },
+            {
                 file: 'irrigation_system_linear_features.geojson',
                 name: 'Irrigation Lines',
                 style: {
@@ -918,8 +935,8 @@
                                     if (labelText.length > 30) {
                                         labelText = labelText.substring(0, 27) + '...';
                                     }
-                                } else if (props.name) {
-                                    labelText = props.name;
+                                } else if (props.name || props.Name) {
+                                    labelText = props.name || props.Name;
                                 } else if (props.location) {
                                     labelText = props.location;
                                 }
@@ -935,7 +952,7 @@
                                         });
                                     } 
                                     // Hover labels for Culverts, Sampling Stations, and Water Valves
-                                    else if (['Culverts', 'Sampling Stations', 'Lower Cabins Water Valves'].includes(config.name)) {
+                                    else if (['Culverts', 'Sampling Stations', 'Lower Cabins Water Valves', 'Upper Cabins Water Valves'].includes(config.name)) {
                                         layer.bindTooltip(labelText, {
                                             permanent: false,
                                             direction: 'top',

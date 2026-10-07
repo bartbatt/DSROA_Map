@@ -1,0 +1,13 @@
+{
+"type": "FeatureCollection",
+"name": "upper_cabins_water_valves",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "name": "upper cabin spring holding tank" }, "geometry": { "type": "Point", "coordinates": [ -112.266647137653408, 37.399632125315868 ] } },
+{ "type": "Feature", "properties": { "name": "upper cabin blowout and isolation valves" }, "geometry": { "type": "Point", "coordinates": [ -112.271441389271274, 37.402394861784096 ] } },
+{ "type": "Feature", "properties": { "name": "upper cabin spring tank drain valve" }, "geometry": { "type": "Point", "coordinates": [ -112.266619137702548, 37.399633125291317 ] } },
+{ "type": "Feature", "properties": { "name": "upper cabin system meter and tank tank winterizarion vault" }, "geometry": { "type": "Point", "coordinates": [ -112.271834244183637, 37.402230413873752 ] } },
+{ "type": "Feature", "properties": { "name": "upper cabin spring box" }, "geometry": { "type": "Point", "coordinates": [ -112.266915137160581, 37.39960112559357 ] } },
+{ "type": "Feature", "properties": { "name": "upper cabin system tank (10k)" }, "geometry": { "type": "Point", "coordinates": [ -112.272528403999644, 37.40196119417611 ] } }
+]
+}
