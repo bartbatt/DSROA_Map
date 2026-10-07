@@ -516,18 +516,21 @@
         // Add base map layers
         const topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://opentopomap.org">OpenTopoMap</a>',
-            maxZoom: 17
+            maxNativeZoom: 17,  // enlarge zoom-17 tiles beyond this instead of going blank
+            maxZoom: 20
         });
         
         const satellite = L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
             attribution: '&copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics',
-            maxZoom: 20  // High resolution imagery - allows zooming in very close
+            maxNativeZoom: 19,  // Esri has imagery to zoom 19 at the ranch; enlarge beyond that
+            maxZoom: 20
         });
         
         // USGS Imagery with Topographic Labels
         const usgsImageryTopo = L.tileLayer('https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryTopo/MapServer/tile/{z}/{y}/{x}', {
             attribution: '&copy; USGS National Map',
-            maxZoom: 16
+            maxNativeZoom: 16,  // USGS tiles stop at zoom 16; enlarge beyond that
+            maxZoom: 20
         });
         
         // USGS National Map imagery (public domain, NAIP 1 m source).
@@ -542,7 +545,8 @@
         
         const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-            maxZoom: 19
+            maxNativeZoom: 19,
+            maxZoom: 20
         });
         
         // Add default base layer (USGS when the phone has no signal, since that's what is saved offline)
@@ -927,8 +931,8 @@
         // ========================================
         // OFFLINE SUPPORT
         // ========================================
-        // Area saved for offline use: DSROA parcels plus ~1/2 mile around them
-        const OFFLINE_BOUNDS = { west: -112.325, south: 37.318, east: -112.188, north: 37.435 };
+        // Area saved for offline use: full extent of every map layer (parcels, roads, grazing allotments, etc.)
+        const OFFLINE_BOUNDS = { west: -112.390, south: 37.260, east: -112.085, north: 37.474 };
         const OFFLINE_MIN_ZOOM = 10;
         const OFFLINE_MAX_ZOOM = 16;
         const DATA_CACHE = 'dsr-data-v1';
