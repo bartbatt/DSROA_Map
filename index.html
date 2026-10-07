@@ -544,70 +544,7 @@
             <span class="legend-toggle" id="legend-toggle">▼</span>
         </div>
         <div class="legend-content" id="legend-content">
-        <div class="legend-item">
-            <div class="legend-symbol" style="background-color: transparent; border: 2px solid #C83232;"></div>
-            <span>Property Parcels</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-line" style="background-color: #0066CC;"></div>
-            <span>Lower Cabins Water System</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-point" style="background-color: #0066CC;"></div>
-            <span>Lower Cabins Water Valves</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-point" style="background-color: #0088CC;"></div>
-            <span>Upper Cabins Water Valves</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-line" style="background-color: #00AA00;"></div>
-            <span>Irrigation Lines</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-line" style="background-color: #8B4513;"></div>
-            <span>Roads (BLM ROW)</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-line" style="background-color: #666666; opacity: 0.6;"></div>
-            <span>Utah Roads</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-point" style="background-color: #FF6B35;"></div>
-            <span>Culverts</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-point" style="background-color: #4ECDC4;"></div>
-            <span>Points of Interest</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-point" style="background-color: #9B59B6;"></div>
-            <span>Sampling Stations</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-symbol" style="background-color: rgba(0,150,255,0.3); border: 2px solid #0096FF;"></div>
-            <span>Irrigation Features</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-symbol" style="background-color: rgba(139,195,74,0.3); border: 2px solid #8BC34A;"></div>
-            <span>Grazing Allotments</span>
-        </div>
-        <hr style="margin: 8px 0; border: none; border-top: 1px solid #ddd;">
-        <!-- AGRC External Data - DISABLED (causing performance issues)
-        <div style="font-weight: 600; margin: 8px 0 4px 0; font-size: 12px; color: #666;">AGRC External Data</div>
-        <div class="legend-item">
-            <div class="legend-symbol" style="background-color: transparent; border: 1px solid #888;"></div>
-            <span>Kane County Parcels</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-line" style="background-color: #666666; opacity: 0.6;"></div>
-            <span>Utah Roads</span>
-        </div>
-        <div class="legend-item">
-            <div class="legend-point" style="background-color: #0099FF; border-color: #003366;"></div>
-            <span>Water Diversions</span>
-        </div>
-        -->
+        <!-- Filled in automatically from the map's layer list (see buildLegend) -->
         </div> <!-- Close legend-content -->
     </div> <!-- Close legend -->
 
@@ -769,6 +706,19 @@
                 group: 'water'
             },
             {
+                file: 'johnny_brown_water_valves.geojson',
+                name: 'Johnny Brown Water Valves',
+                pointStyle: {
+                    radius: 5,
+                    fillColor: '#1A3E8C',
+                    color: '#FFF',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.9
+                },
+                group: 'water'
+            },
+            {
                 file: 'upper_cabins_water_valves.geojson',
                 name: 'Upper Cabins Water Valves',
                 pointStyle: {
@@ -901,6 +851,47 @@
         
         // Load all layers
         let loadedCount = 0;
+        // Build the legend from the same layer list as the layers menu, alphabetically,
+        // so every layer that can be toggled always has a legend entry.
+        (function buildLegend() {
+            const content = document.getElementById('legend-content');
+            if (!content) return;
+            const withAlpha = (hex, a) => {
+                const n = parseInt(hex.replace('#', ''), 16);
+                return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+            };
+            layerConfigs
+                .slice()
+                .sort((x, y) => x.name.localeCompare(y.name, undefined, { sensitivity: 'base' }))
+                .forEach(cfg => {
+                    const item = document.createElement('div');
+                    item.className = 'legend-item';
+                    const sym = document.createElement('div');
+                    if (cfg.pointStyle) {
+                        sym.className = 'legend-point';
+                        sym.style.backgroundColor = cfg.pointStyle.fillColor;
+                    } else if (cfg.style && cfg.style.fillColor) {
+                        // Area
+                        sym.className = 'legend-symbol';
+                        sym.style.backgroundColor = withAlpha(cfg.style.fillColor, cfg.style.fillOpacity || 0);
+                        sym.style.border = `2px ${cfg.style.dashArray ? 'dashed' : 'solid'} ${cfg.style.color}`;
+                    } else {
+                        // Line
+                        sym.className = 'legend-line';
+                        const c = cfg.style.color;
+                        sym.style.background = cfg.style.dashArray
+                            ? `repeating-linear-gradient(90deg, ${c} 0 5px, transparent 5px 10px)`
+                            : c;
+                        sym.style.opacity = cfg.style.opacity || 1;
+                    }
+                    const label = document.createElement('span');
+                    label.textContent = cfg.name;
+                    item.appendChild(sym);
+                    item.appendChild(label);
+                    content.appendChild(item);
+                });
+        })();
+        
         const totalLayers = layerConfigs.length;
         
         layerConfigs.forEach(config => {
@@ -952,7 +943,7 @@
                                         });
                                     } 
                                     // Hover labels for Culverts, Sampling Stations, and Water Valves
-                                    else if (['Culverts', 'Sampling Stations', 'Lower Cabins Water Valves', 'Upper Cabins Water Valves'].includes(config.name)) {
+                                    else if (['Culverts', 'Sampling Stations', 'Lower Cabins Water Valves', 'Upper Cabins Water Valves', 'Johnny Brown Water Valves'].includes(config.name)) {
                                         layer.bindTooltip(labelText, {
                                             permanent: false,
                                             direction: 'top',
@@ -1056,7 +1047,13 @@
                         };
                         
                         // Save layer control reference for adding AGRC layers later
-                        map.layersControl = L.control.layers(baseLayers, overlays, {
+                        // List overlay layers alphabetically (load order varies)
+                        const sortedOverlays = {};
+                        Object.keys(overlays)
+                            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }))
+                            .forEach(name => { sortedOverlays[name] = overlays[name]; });
+                        
+                        map.layersControl = L.control.layers(baseLayers, sortedOverlays, {
                             collapsed: true,  // Changed to true so it starts collapsed and can be toggled
                             position: 'topright'
                         }).addTo(map);
