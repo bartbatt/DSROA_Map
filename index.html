@@ -395,18 +395,22 @@
         }
         .dsr-tools button:disabled { opacity: 0.6; cursor: default; }
         .dsr-status { font-size: 12px; color: #555; line-height: 1.35; }
-        /* Road name labels (shown when zoomed in) */
-        .road-label { pointer-events: none; }
-        .road-label span {
+        /* Road name labels (shown when zoomed in), drawn along the curve of the road */
+        .road-label-svg {
             position: absolute;
             left: 0;
             top: 0;
-            white-space: nowrap;
-            color: #FFFFFF;
-            font: 700 11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            overflow: visible;
+            pointer-events: none;
+        }
+        .road-label-text {
+            fill: #FFFFFF;
+            font: 400 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             letter-spacing: 0.5px;
-            text-shadow: 0 0 3px #000, 0 0 2px #000, 1px 1px 2px #000;
-            transform-origin: center center;
+            stroke: rgba(0, 0, 0, 0.6);
+            stroke-width: 2.5px;
+            stroke-linejoin: round;
+            paint-order: stroke;
         }
         .dsr-tools-body { display: flex; flex-direction: column; gap: 6px; }
         .dsr-tools.collapsed { padding: 0; }
@@ -957,18 +961,63 @@
         map.createPane('roadLabels');
         map.getPane('roadLabels').style.zIndex = 450;
         map.getPane('roadLabels').style.pointerEvents = 'none';
-        const roadLabelGroup = L.layerGroup().addTo(map);
+        const SVG_NS = 'http://www.w3.org/2000/svg';
+        const roadLabelSvg = document.createElementNS(SVG_NS, 'svg');
+        roadLabelSvg.setAttribute('class', 'road-label-svg');
+        roadLabelSvg.setAttribute('width', '1');
+        roadLabelSvg.setAttribute('height', '1');
+        map.getPane('roadLabels').appendChild(roadLabelSvg);
         let roadLabelTimer = null;
+        let roadLabelCount = 0;
         
         function scheduleRoadLabels() {
             clearTimeout(roadLabelTimer);
             roadLabelTimer = setTimeout(updateRoadLabels, 100);
         }
         
+        // Points along a screen-space polyline: total length, and the stretch of it centered on the middle
+        function lineLength(pts) {
+            let total = 0;
+            for (let i = 1; i < pts.length; i++) total += pts[i].distanceTo(pts[i - 1]);
+            return total;
+        }
+        function pointAt(pts, dist) {
+            for (let i = 1; i < pts.length; i++) {
+                const seg = pts[i].distanceTo(pts[i - 1]);
+                if (dist <= seg && seg > 0) {
+                    const t = dist / seg;
+                    return L.point(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+                                   pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t);
+                }
+                dist -= seg;
+            }
+            return pts[pts.length - 1];
+        }
+        // Evenly spaced points along the middle `span` pixels of the line, lightly smoothed
+        // so the text bends with the road instead of kinking at every corner.
+        function labelCurve(pts, span) {
+            const total = lineLength(pts);
+            const from = (total - span) / 2, step = 4;
+            let samples = [];
+            for (let d = from; d <= from + span + 0.01; d += step) samples.push(pointAt(pts, d));
+            for (let pass = 0; pass < 3; pass++) {
+                samples = samples.map((p, i) => {
+                    if (i === 0 || i === samples.length - 1) return p;
+                    const a = samples[i - 1], c = samples[i + 1];
+                    return L.point((a.x + 2 * p.x + c.x) / 4, (a.y + 2 * p.y + c.y) / 4);
+                });
+            }
+            // Keep text reading left-to-right (not upside down)
+            if (samples[samples.length - 1].x < samples[0].x) samples.reverse();
+            return samples;
+        }
+        
         function updateRoadLabels() {
-            roadLabelGroup.clearLayers();
+            while (roadLabelSvg.firstChild) roadLabelSvg.removeChild(roadLabelSvg.firstChild);
+            roadLabelCount = 0;
             if (map.getZoom() < ROAD_LABEL_MIN_ZOOM) return;
             const view = map.getBounds().pad(0.1);
+            const inner = map.getBounds().pad(-0.05);
             const placed = [];   // {name, pt}
             
             ROAD_LAYER_NAMES.forEach(layerName => {
@@ -982,30 +1031,16 @@
                     
                     let parts = line.getLatLngs();
                     if (parts.length && !Array.isArray(parts[0])) parts = [parts];
-                    const textPx = name.length * 7.5 + 20;
+                    const textPx = name.length * 7 + 12;   // approximate width of the name on screen
                     
                     parts.forEach(part => {
                         const pts = part.map(ll => map.latLngToLayerPoint(ll));
-                        let total = 0;
-                        for (let i = 1; i < pts.length; i++) total += pts[i].distanceTo(pts[i - 1]);
-                        if (total < textPx) return;  // too short on screen to fit the name
+                        const total = lineLength(pts);
+                        if (total < textPx + 20) return;  // too short on screen to fit the name
                         
-                        // Midpoint along the line, and the direction of the line there
-                        let half = total / 2, mid = null, angle = 0;
-                        for (let i = 1; i < pts.length; i++) {
-                            const seg = pts[i].distanceTo(pts[i - 1]);
-                            if (half <= seg && seg > 0) {
-                                const t = half / seg;
-                                mid = L.point(pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
-                                              pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t);
-                                angle = Math.atan2(pts[i].y - pts[i - 1].y, pts[i].x - pts[i - 1].x) * 180 / Math.PI;
-                                break;
-                            }
-                            half -= seg;
-                        }
-                        if (!mid) return;
+                        const mid = pointAt(pts, total / 2);
                         const midLatLng = map.layerPointToLatLng(mid);
-                        if (!map.getBounds().pad(-0.05).contains(midLatLng)) return;  // keep labels fully on screen
+                        if (!inner.contains(midLatLng)) return;  // keep labels fully on screen
                         
                         // Skip if the same name is already labeled nearby, or another label is in the way
                         const crowded = placed.some(p =>
@@ -1013,20 +1048,40 @@
                         if (crowded) return;
                         placed.push({ name, pt: mid });
                         
-                        if (angle > 90) angle -= 180;      // keep text upright
-                        if (angle < -90) angle += 180;
-                        const icon = L.divIcon({
-                            className: 'road-label',
-                            html: `<span style="transform: translate(-50%, -50%) rotate(${angle.toFixed(1)}deg)">${name}</span>`,
-                            iconSize: [0, 0]
+                        const curve = labelCurve(pts, textPx);
+                        const size = map.getSize();
+                        const onScreen = [curve[0], curve[curve.length - 1]].every(p => {
+                            const c = map.layerPointToContainerPoint(p);
+                            return c.x > 4 && c.y > 4 && c.x < size.x - 4 && c.y < size.y - 4;
                         });
-                        L.marker(midLatLng, { icon, interactive: false, keyboard: false, pane: 'roadLabels' })
-                            .addTo(roadLabelGroup);
+                        if (!onScreen) { placed.pop(); return; }  // name would run off the edge
+                        const id = 'road-label-path-' + (roadLabelCount++);
+                        const path = document.createElementNS(SVG_NS, 'path');
+                        path.setAttribute('id', id);
+                        path.setAttribute('d', 'M' + curve.map(p => p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join(' L'));
+                        path.setAttribute('fill', 'none');
+                        path.setAttribute('stroke', 'none');
+                        
+                        const text = document.createElementNS(SVG_NS, 'text');
+                        text.setAttribute('class', 'road-label-text');
+                        text.setAttribute('dy', '4');
+                        const textPath = document.createElementNS(SVG_NS, 'textPath');
+                        textPath.setAttribute('href', '#' + id);
+                        textPath.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', '#' + id);
+                        textPath.setAttribute('startOffset', '50%');
+                        textPath.setAttribute('text-anchor', 'middle');
+                        textPath.textContent = name;
+                        text.appendChild(textPath);
+                        
+                        roadLabelSvg.appendChild(path);
+                        roadLabelSvg.appendChild(text);
                     });
                 });
             });
         }
         
+        // Hide labels during the zoom animation (they're redrawn when it finishes)
+        map.on('zoomstart', () => { while (roadLabelSvg.firstChild) roadLabelSvg.removeChild(roadLabelSvg.firstChild); });
         map.on('zoomend moveend overlayadd overlayremove', scheduleRoadLabels);
         
         // ========================================
