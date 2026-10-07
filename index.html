@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Deer Springs Ranch - Property Map</title>
     
+    <!-- Install as an app / offline support -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2F4F2F">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="DSR Map">
+    
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     
@@ -364,6 +372,30 @@
 
             }
         }
+        /* Offline download + locate controls */
+        .dsr-tools {
+            background: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            padding: 6px;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            max-width: 220px;
+        }
+        .dsr-tools button {
+            font: 600 13px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            background: #f7f7f7;
+            padding: 7px 10px;
+            cursor: pointer;
+            text-align: left;
+            color: #333;
+        }
+        .dsr-tools button:disabled { opacity: 0.6; cursor: default; }
+        .dsr-status { font-size: 12px; color: #555; line-height: 1.35; }
+        .dsr-status:empty { display: none; }
     </style>
 </head>
 <body>
@@ -479,13 +511,27 @@
             maxZoom: 16
         });
         
+        // USGS National Map imagery (public domain, NAIP 1 m source).
+        // Native tiles stop at zoom 16; beyond that the zoom-16 tiles are enlarged.
+        // This is the layer saved to phones for offline use.
+        const USGS_IMAGERY_URL = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}';
+        const usgsImagery = L.tileLayer(USGS_IMAGERY_URL, {
+            attribution: 'USDA, USGS The National Map: Orthoimagery',
+            maxNativeZoom: 16,
+            maxZoom: 20
+        });
+        
         const streets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
             maxZoom: 19
         });
         
-        // Add default base layer
-        satellite.addTo(map);
+        // Add default base layer (USGS when the phone has no signal, since that's what is saved offline)
+        if (navigator.onLine) {
+            satellite.addTo(map);
+        } else {
+            usgsImagery.addTo(map);
+        }
         
         // Layer groups for organization
         const overlays = {};
@@ -840,6 +886,7 @@
                     if (loadedCount === totalLayers) {
                         const baseLayers = {
                             "Satellite": satellite,
+                            "USGS Imagery (works offline)": usgsImagery,
                             "USGS Imagery + Topo": usgsImageryTopo,
                             "Topographic": topoMap,
                             "Streets": streets
@@ -857,6 +904,185 @@
                     loadedCount++;
                 });
         });
+        
+        // ========================================
+        // OFFLINE SUPPORT
+        // ========================================
+        // Area saved for offline use: DSROA parcels plus ~1/2 mile around them
+        const OFFLINE_BOUNDS = { west: -112.325, south: 37.318, east: -112.188, north: 37.435 };
+        const OFFLINE_MIN_ZOOM = 10;
+        const OFFLINE_MAX_ZOOM = 16;
+        const DATA_CACHE = 'dsr-data-v1';
+        const TILE_CACHE = 'dsr-tiles-v1';
+        const LIBRARY_URLS = [
+            'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
+            'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
+            'https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js',
+            'https://unpkg.com/leaflet@1.9.4/dist/images/layers.png',
+            'https://unpkg.com/leaflet@1.9.4/dist/images/layers-2x.png'
+        ];
+        
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.error('Offline setup failed:', err));
+        }
+        
+        function lonLatToTile(lon, lat, z) {
+            const n = Math.pow(2, z);
+            const x = Math.floor((lon + 180) / 360 * n);
+            const latRad = lat * Math.PI / 180;
+            const y = Math.floor((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2 * n);
+            return { x, y };
+        }
+        
+        function offlineTileUrls() {
+            const urls = [];
+            for (let z = OFFLINE_MIN_ZOOM; z <= OFFLINE_MAX_ZOOM; z++) {
+                const a = lonLatToTile(OFFLINE_BOUNDS.west, OFFLINE_BOUNDS.north, z);
+                const b = lonLatToTile(OFFLINE_BOUNDS.east, OFFLINE_BOUNDS.south, z);
+                for (let x = a.x; x <= b.x; x++) {
+                    for (let y = a.y; y <= b.y; y++) {
+                        urls.push(USGS_IMAGERY_URL.replace('{z}', z).replace('{y}', y).replace('{x}', x));
+                    }
+                }
+            }
+            return urls;
+        }
+        
+        async function fetchAndStore(cache, url, allowOpaque) {
+            if (await cache.match(url, { ignoreVary: true })) return true;
+            try {
+                let response = await fetch(url, { mode: 'cors' });
+                if (!response.ok) return false;
+                await cache.put(url, response);
+                return true;
+            } catch (err) {
+                if (!allowOpaque) return false;
+                try {
+                    const response = await fetch(url, { mode: 'no-cors' });
+                    await cache.put(url, response);
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            }
+        }
+        
+        async function downloadForOffline(button, status) {
+            if (!('caches' in window)) {
+                status.textContent = 'This browser does not support offline maps.';
+                return;
+            }
+            if (!navigator.onLine) {
+                status.textContent = 'Connect to the internet (Wi-Fi recommended) to download.';
+                return;
+            }
+            button.disabled = true;
+            try {
+                if (navigator.storage && navigator.storage.persist) {
+                    await navigator.storage.persist();
+                }
+                
+                // 1. Page, map data, and code libraries
+                status.textContent = 'Saving map data...';
+                const dataCache = await caches.open(DATA_CACHE);
+                const pageUrls = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png'];
+                const dataUrls = layerConfigs.map(c => c.file.split('?')[0]);
+                let failed = 0;
+                for (const url of [...pageUrls, ...dataUrls]) {
+                    if (!(await fetchAndStoreFresh(dataCache, url))) failed++;
+                }
+                for (const url of LIBRARY_URLS) {
+                    if (!(await fetchAndStore(dataCache, url, true))) failed++;
+                }
+                
+                // 2. USGS imagery tiles
+                const tileCache = await caches.open(TILE_CACHE);
+                const tiles = offlineTileUrls();
+                let done = 0, tileFailed = 0;
+                const queue = tiles.slice();
+                async function worker() {
+                    while (queue.length) {
+                        const url = queue.shift();
+                        if (!(await fetchAndStore(tileCache, url, true))) tileFailed++;
+                        done++;
+                        if (done % 10 === 0 || done === tiles.length) {
+                            status.textContent = `Saving imagery: ${done} of ${tiles.length} tiles...`;
+                        }
+                    }
+                }
+                await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
+                
+                let usedText = '';
+                if (navigator.storage && navigator.storage.estimate) {
+                    const est = await navigator.storage.estimate();
+                    usedText = ` (${Math.round(est.usage / 1048576)} MB used)`;
+                }
+                if (failed + tileFailed === 0) {
+                    status.textContent = `Saved for offline use${usedText}. Use "USGS Imagery (works offline)" when out of signal.`;
+                    try { localStorage.setItem('dsrOfflineSaved', new Date().toISOString()); } catch (e) {}
+                } else {
+                    status.textContent = `Saved with ${failed + tileFailed} items missing${usedText}. Tap again to retry.`;
+                }
+            } catch (err) {
+                console.error(err);
+                status.textContent = 'Download stopped: ' + err.message + '. Tap again to resume.';
+            } finally {
+                button.disabled = false;
+                button.textContent = '⬇ Update offline map';
+            }
+        }
+        
+        // Same-origin map files: always re-download so the saved copy is current
+        async function fetchAndStoreFresh(cache, url) {
+            try {
+                const response = await fetch(url, { cache: 'no-cache' });
+                if (!response.ok) return false;
+                await cache.put(url, response);
+                return true;
+            } catch (err) {
+                return !!(await cache.match(url, { ignoreSearch: true }));
+            }
+        }
+        
+        // Toolbar: offline download + "where am I"
+        const ToolsControl = L.Control.extend({
+            options: { position: 'topleft' },
+            onAdd: function() {
+                const div = L.DomUtil.create('div', 'dsr-tools');
+                L.DomEvent.disableClickPropagation(div);
+                L.DomEvent.disableScrollPropagation(div);
+                
+                const dlButton = L.DomUtil.create('button', '', div);
+                const status = L.DomUtil.create('div', 'dsr-status', div);
+                let saved = null;
+                try { saved = localStorage.getItem('dsrOfflineSaved'); } catch (e) {}
+                dlButton.textContent = saved ? '⬇ Update offline map' : '⬇ Download for offline';
+                if (saved) status.textContent = 'Offline map saved ' + new Date(saved).toLocaleDateString() + '.';
+                dlButton.onclick = () => downloadForOffline(dlButton, status);
+                
+                const locButton = L.DomUtil.create('button', '', div);
+                locButton.textContent = '◎ Show my location';
+                locButton.onclick = () => {
+                    status.textContent = 'Finding your location...';
+                    map.locate({ setView: true, maxZoom: 17, enableHighAccuracy: true });
+                };
+                
+                map.on('locationfound', e => {
+                    if (map._dsrLocation) map.removeLayer(map._dsrLocation);
+                    map._dsrLocation = L.layerGroup([
+                        L.circle(e.latlng, { radius: e.accuracy, color: '#1E88E5', weight: 1, fillOpacity: 0.12 }),
+                        L.circleMarker(e.latlng, { radius: 7, color: '#fff', weight: 2, fillColor: '#1E88E5', fillOpacity: 1 })
+                    ]).addTo(map);
+                    status.textContent = `Location accurate to about ${Math.round(e.accuracy * 3.28084)} ft.`;
+                });
+                map.on('locationerror', e => {
+                    status.textContent = 'Could not get location. Check that location access is allowed for this map.';
+                });
+                
+                return div;
+            }
+        });
+        new ToolsControl().addTo(map);
         
         // Add scale control
         L.control.scale({
