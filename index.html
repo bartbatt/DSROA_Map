@@ -395,6 +395,63 @@
         }
         .dsr-tools button:disabled { opacity: 0.6; cursor: default; }
         .dsr-status { font-size: 12px; color: #555; line-height: 1.35; }
+        /* Offline help card */
+        .dsr-help-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.45);
+            z-index: 3000;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .dsr-help-backdrop.open { display: flex; }
+        .dsr-help-card {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.35);
+            max-width: 420px;
+            width: 100%;
+            max-height: 85vh;
+            overflow-y: auto;
+            padding: 18px 18px 14px;
+            font: 14px/1.45 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            color: #333;
+        }
+        .dsr-help-card h3 { font-size: 17px; margin-bottom: 8px; }
+        .dsr-help-card h4 { font-size: 14px; margin: 14px 0 4px; }
+        .dsr-help-card ol { padding-left: 20px; }
+        .dsr-help-card li { margin: 3px 0; }
+        .dsr-help-card .dsr-note {
+            background: #FFF6E0;
+            border-left: 3px solid #E0A100;
+            padding: 8px 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-size: 13px;
+        }
+        .dsr-help-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; flex-wrap: wrap; }
+        .dsr-help-actions button {
+            font: 600 14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            border-radius: 6px;
+            padding: 8px 14px;
+            border: 1px solid #ccc;
+            background: #f7f7f7;
+            color: #333;
+            cursor: pointer;
+        }
+        .dsr-help-actions button.primary { background: #2F4F2F; border-color: #2F4F2F; color: white; }
+        .dsr-tools .dsr-help-link {
+            background: none;
+            border: none;
+            padding: 2px 4px;
+            font-weight: 400;
+            font-size: 12px;
+            color: #1E6FB8;
+            text-decoration: underline;
+        }
+        
         /* Road name labels (shown when zoomed in), drawn along the curve of the road */
         .road-label-svg {
             position: absolute;
@@ -436,6 +493,50 @@
 </head>
 <body>
     <div class="map-title">Deer Springs Ranch Property Map</div>
+    
+    <!-- Offline help card (opened from the offline panel) -->
+    <div class="dsr-help-backdrop" id="dsr-help">
+        <div class="dsr-help-card" role="dialog" aria-labelledby="dsr-help-title">
+            <h3 id="dsr-help-title">Using this map without cell service</h3>
+            <div class="dsr-note" id="dsr-help-warning" style="display:none">
+                <strong>Add this map to your Home Screen first.</strong> On iPhone, a download done in a Safari tab
+                may not be available from the Home Screen icon, so download from the icon instead.
+            </div>
+            <div id="dsr-help-iphone">
+                <h4>iPhone</h4>
+                <ol>
+                    <li>Open this map in <strong>Safari</strong> while on Wi-Fi.</li>
+                    <li>Tap <strong>Share</strong> (square with arrow) → <strong>Add to Home Screen</strong> → <strong>Add</strong>.</li>
+                    <li>Close Safari and open the map from the new <strong>DSR Map</strong> icon.</li>
+                    <li>Tap <strong>⬇ Download for offline</strong> and wait for "Saved for offline use."</li>
+                </ol>
+            </div>
+            <div id="dsr-help-android">
+                <h4>Android</h4>
+                <ol>
+                    <li>Open this map in <strong>Chrome</strong> while on Wi-Fi.</li>
+                    <li>Tap <strong>⋮</strong> (top right) → <strong>Add to Home screen</strong> (or <strong>Install app</strong>).</li>
+                    <li>Open the map from the new <strong>DSR Map</strong> icon.</li>
+                    <li>Tap <strong>⬇ Download for offline</strong> and wait for "Saved for offline use."</li>
+                </ol>
+            </div>
+            <h4>At the ranch (no signal)</h4>
+            <ol>
+                <li>Open the map from the <strong>DSR Map</strong> icon.</li>
+                <li>The background switches to <strong>USGS Imagery (works offline)</strong> automatically. If it's blank, choose it in the layers menu (top right).</li>
+                <li>Tap <strong>◎ Show my location</strong> to see where you are. GPS works without cell service.</li>
+            </ol>
+            <h4>Keeping it current</h4>
+            <ol>
+                <li>Every so often, while on Wi-Fi, open the map and tap <strong>⬇ Update offline map</strong> to get the latest parcel, road and water system data.</li>
+            </ol>
+            <p style="font-size:12px;color:#777;margin-top:10px">Kane County property-record links in parcel pop-ups need internet.</p>
+            <div class="dsr-help-actions">
+                <button id="dsr-help-anyway" style="display:none">Download here anyway</button>
+                <button class="primary" id="dsr-help-close">Got it</button>
+            </div>
+        </div>
+    </div>
     <div id="map"></div>
     <div class="legend">
         <div class="legend-header" onclick="toggleLegend()">
@@ -1197,7 +1298,7 @@
                     usedText = ` (${Math.round(est.usage / 1048576)} MB used)`;
                 }
                 if (failed + tileFailed === 0) {
-                    status.textContent = `Saved for offline use${usedText}. Use "USGS Imagery (works offline)" when out of signal.`;
+                    status.textContent = `Saved for offline use${usedText}. With no signal, the map uses "USGS Imagery (works offline)". Tap "Update offline map" on Wi-Fi now and then to stay current.`;
                     try { localStorage.setItem('dsrOfflineSaved', new Date().toISOString()); } catch (e) {}
                 } else {
                     status.textContent = `Saved with ${failed + tileFailed} items missing${usedText}. Tap again to retry.`;
@@ -1222,6 +1323,39 @@
                 return !!(await cache.match(url, { ignoreSearch: true }));
             }
         }
+        
+        // ---- Offline help card ----
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+                      (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const isAndroid = /Android/i.test(navigator.userAgent);
+        const isPhone = isIOS || isAndroid;
+        const isInstalled = window.navigator.standalone === true ||
+                            (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+        let helpOnAnyway = null;
+        
+        function openOfflineHelp(options) {
+            options = options || {};
+            const helpEl = document.getElementById('dsr-help');
+            document.getElementById('dsr-help-warning').style.display = options.warn ? 'block' : 'none';
+            // Show this phone's steps first (both when it's not a phone)
+            document.getElementById('dsr-help-iphone').style.display = (isAndroid ? 'none' : 'block');
+            document.getElementById('dsr-help-android').style.display = (isIOS ? 'none' : 'block');
+            const anyway = document.getElementById('dsr-help-anyway');
+            anyway.style.display = options.onAnyway ? 'inline-block' : 'none';
+            helpOnAnyway = options.onAnyway || null;
+            helpEl.classList.add('open');
+        }
+        function closeOfflineHelp() {
+            document.getElementById('dsr-help').classList.remove('open');
+        }
+        document.getElementById('dsr-help-close').onclick = closeOfflineHelp;
+        document.getElementById('dsr-help-anyway').onclick = () => {
+            closeOfflineHelp();
+            if (helpOnAnyway) helpOnAnyway();
+        };
+        document.getElementById('dsr-help').addEventListener('click', e => {
+            if (e.target.id === 'dsr-help') closeOfflineHelp();
+        });
         
         // Toolbar: offline download + "where am I"
         const ToolsControl = L.Control.extend({
@@ -1254,9 +1388,19 @@
                 try { saved = localStorage.getItem('dsrOfflineSaved'); } catch (e) {}
                 dlButton.textContent = saved ? '⬇ Update offline map' : '⬇ Download for offline';
                 if (saved) status.textContent = 'Offline map saved ' + new Date(saved).toLocaleDateString() + '.';
-                dlButton.onclick = () => downloadForOffline(dlButton, status);
+                dlButton.onclick = () => {
+                    // On a phone, the download should happen from the Home Screen app, not a browser tab
+                    if (isPhone && !isInstalled) {
+                        openOfflineHelp({ warn: true, onAnyway: () => downloadForOffline(dlButton, status) });
+                    } else {
+                        downloadForOffline(dlButton, status);
+                    }
+                };
                 
                 const locButton = L.DomUtil.create('button', '', body);
+                const helpLink = L.DomUtil.create('button', 'dsr-help-link', body);
+                helpLink.textContent = 'How to use offline';
+                helpLink.onclick = () => openOfflineHelp();
                 locButton.textContent = '◎ Show my location';
                 locButton.onclick = () => {
                     status.textContent = 'Finding your location...';
